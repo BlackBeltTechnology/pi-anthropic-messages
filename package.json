@@ -1,7 +1,7 @@
 {
   "name": "@pi/anthropic-messages",
-  "version": "0.1.0",
-  "description": "Anthropic-messages protocol bridge for pi: mcp__ prefixing of custom tools, optional native-tool aliasing, and system-prompt compat shims. Works with direct Anthropic OAuth/API keys and proxy providers (9Router, pi-model-proxy, etc.).",
+  "version": "0.2.0",
+  "description": "Anthropic-messages protocol bridge for pi. Single-gate (Claude model on anthropic-messages): canonicalizes lowercase pi core tools (read/write/bash/grep → Read/Write/Bash/Grep), namespaces custom tools under mcp__pi__, rewrites the system prompt, and translates tool-call names back inbound with defensive _ide suffix stripping. True no-op for non-Claude anthropic-messages and for any non-anthropic-messages session.",
   "keywords": [
     "pi",
     "pi-package",
