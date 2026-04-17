@@ -1,0 +1,30 @@
+{
+  "name": "@pi/anthropic-messages",
+  "version": "0.1.0",
+  "description": "Anthropic-messages protocol bridge for pi: mcp__ prefixing of custom tools, optional native-tool aliasing, and system-prompt compat shims. Works with direct Anthropic OAuth/API keys and proxy providers (9Router, pi-model-proxy, etc.).",
+  "keywords": [
+    "pi",
+    "pi-package",
+    "pi-extension",
+    "pi-coding-agent",
+    "anthropic",
+    "anthropic-messages",
+    "mcp",
+    "tool-namespacing",
+    "proxy"
+  ],
+  "type": "module",
+  "files": [
+    "extensions/",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions/index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.57.0"
+  },
+  "license": "MIT"
+}
