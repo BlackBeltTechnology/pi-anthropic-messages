@@ -137,6 +137,212 @@ equivalents under `mcp__pi__*` (`mcp__pi__ask_user`,
 `mcp__pi__web_search`, `mcp__pi__fetch_content`, …) and the model uses
 those instead.
 
+## Schema adapters (planned)
+
+### The problem: name aliasing is not enough
+
+Renaming `web_search` → `WebSearch` on the wire gives the model a
+canonical name it recognizes from training — but the model then calls
+the tool with **Claude Code's expected input shape**, not pi's. The
+schemas don't match:
+
+| Tool | Claude Code canonical schema | Pi extension schema | Gap |
+|---|---|---|---|
+| `web_search` → `WebSearch` | `{ query, allowed_domains?, blocked_domains? }` | `{ query?, queries?[], numResults?, recencyFilter?, domainFilter?[], provider?, workflow?, includeContent? }` | CC is a strict subset; pi supports multi-query, recency filtering, provider selection, content prefetch |
+| `fetch_content` → `WebFetch` | `{ url, prompt? }` | `{ url?, urls?[], prompt?, timestamp?, frames?, forceClone?, model? }` | CC is a strict subset; pi supports multi-URL, video frame extraction, GitHub clone |
+| `get_subagent_result` → `TaskOutput` | `{ task_id, wait?, verbose? }` | `{ agent_id, wait?, verbose? }` | Near-identical; field rename `task_id` ↔ `agent_id` |
+| `ask_user` → `AskUserQuestion` | `{ question, options?[], allow_multiple? }` | `{ method: confirm\|select\|multiselect\|input\|batch, prompt, options?[], questions?[] }` | Fundamentally different model — pi's discriminated union with batch support loses too much expressiveness to adapt |
+
+Without schema translation, a name-only alias causes the model to send
+canonical-shaped input (`{ query: "foo" }`) to a handler expecting pi's
+shape — it silently works but **the model can never discover or use pi's
+richer features** (multi-query, recency, domain filtering, etc.).
+
+### Solution: per-tool binding adapters
+
+Each tool that benefits from canonicalization gets a **ToolBinding** with
+an adapter that translates between the canonical wire schema and pi's
+handler schema:
+
+```ts
+export interface ToolBinding {
+  /** Pi's registered tool name. */
+  piName: string;
+
+  /** Canonical name visible on the wire / to the model. */
+  canonicalName: string;
+
+  /**
+   * Schema strategy:
+   *   passthrough — pi's schema under the canonical name, zero translation.
+   *   canonical   — canonical schema only; adaptInput required.
+   *   hybrid      — canonical fields + pi-specific extras exposed.
+   */
+  schemaStrategy: "passthrough" | "canonical" | "hybrid";
+
+  /** Schema sent to the model. Omitted for passthrough. */
+  canonicalSchema?: TSchema;
+
+  /** Reshape model's canonical input → pi handler's expected input. */
+  adaptInput?: (wireInput: unknown) => unknown;
+
+  /** Reshape pi's result → canonical result (rarely needed). */
+  adaptOutput?: (piResult: unknown) => unknown;
+}
+```
+
+The **hybrid** strategy is the sweet spot for feature-rich pi tools: it
+exposes the canonical fields the model is trained on *plus* pi-specific
+extras, so the model can use either shape. The adapter normalizes
+whichever the model produces.
+
+### Planned bindings
+
+| Pi tool | Canonical | Strategy | Rationale |
+|---|---|---|---|
+| `web_search` | `WebSearch` | **hybrid** | Expose `query` + CC domain fields + pi extras (`queries[]`, `recencyFilter`, `numResults`). Adapter merges `allowed_domains`/`blocked_domains` → pi's `domainFilter[]` (prefix `-` for blocked). |
+| `fetch_content` | `WebFetch` | **hybrid** | Expose `url` + `prompt` + pi extras (`urls[]`, `timestamp`, `frames`). Adapter normalizes `url`/`urls` to pi's shape. |
+| `get_subagent_result` | `TaskOutput` | **canonical** | Near-1:1 schema. Adapter renames `task_id` → `agent_id`. |
+| `ask_user` | — | **skip** | Pi's discriminated union (`confirm`/`select`/`multiselect`/`input`/`batch`) is fundamentally richer than CC's flat `AskUserQuestion`. Adapting would lose batch support, typed confirm UX, and multiselect semantics. Stays as `mcp__pi__ask_user`. |
+
+### Data flow with adapters
+
+```
+  OUTBOUND (before_provider_request)
+  ──────────────────────────────────
+  1. Find binding by pi tool name
+  2. Replace tool.name with binding.canonicalName
+  3. If hybrid/canonical: replace tool.input_schema with binding.canonicalSchema
+  4. Rewrite historical tool_use blocks in messages (name + input if needed)
+
+  INBOUND (message_end)
+  ─────────────────────
+  1. Find binding by canonical name on tool_use block
+  2. Restore tool_use.name to binding.piName
+  3. If adaptInput defined: tool_use.input = binding.adaptInput(tool_use.input)
+  4. Pi dispatches to original handler with pi-shaped arguments ✓
+```
+
+### Adapter example: `web_search → WebSearch`
+
+```ts
+// Hybrid schema: CC canonical fields + pi extras.
+// Model can use either { query, blocked_domains } (CC-trained)
+// or { queries, recencyFilter, numResults } (pi-specific).
+const webSearchBinding: ToolBinding = {
+  piName: "web_search",
+  canonicalName: "WebSearch",
+  schemaStrategy: "hybrid",
+  canonicalSchema: Type.Object({
+    query:             Type.Optional(Type.String()),
+    allowed_domains:   Type.Optional(Type.Array(Type.String())),
+    blocked_domains:   Type.Optional(Type.Array(Type.String())),
+    // pi extras:
+    queries:           Type.Optional(Type.Array(Type.String())),
+    numResults:        Type.Optional(Type.Number()),
+    recencyFilter:     Type.Optional(StringEnum(["day","week","month","year"])),
+  }),
+  adaptInput: (cc: any) => {
+    const out: Record<string, unknown> = {};
+    // Prefer queries[] over query (pi's richer multi-query)
+    if (cc.queries?.length) out.queries = cc.queries;
+    else if (cc.query)      out.query = cc.query;
+    // Merge CC domain fields → pi's unified domainFilter[]
+    const dom: string[] = [];
+    if (cc.allowed_domains) dom.push(...cc.allowed_domains);
+    if (cc.blocked_domains) dom.push(...cc.blocked_domains.map((d: string) => `-${d}`));
+    if (dom.length)         out.domainFilter = dom;
+    if (cc.numResults    !== undefined) out.numResults    = cc.numResults;
+    if (cc.recencyFilter !== undefined) out.recencyFilter = cc.recencyFilter;
+    return out;
+  },
+};
+```
+
+### Dynamic binding registration
+
+Bindings can be registered in two ways:
+
+1. **Built-in** — shipped in `extensions/bindings/` within this package
+   for the recommended extensions (`web_search`, `fetch_content`,
+   `get_subagent_result`).
+
+2. **Dynamic** — any extension can register a binding at runtime via a
+   shared `globalThis` registry, supporting both install-order
+   scenarios:
+
+```ts
+// In any extension's onLoad / session_start:
+const registry = (globalThis as any).__piAnthropicBindings__;
+if (registry) {
+  registry.register({
+    piName: "my_tool",
+    canonicalName: "MyCanonical",
+    schemaStrategy: "passthrough",
+  });
+}
+```
+
+The bridge exposes the registry on `globalThis.__piAnthropicBindings__`
+at load time. If the bridge isn't installed, the property doesn't exist
+and the `if (registry)` guard is a no-op — zero coupling.
+
+For **order-independent install** (bridge loads before or after other
+extensions), both sides use a symmetric emit-and-listen pattern:
+
+- Each extension that wants to register a binding calls
+  `declareToolBinding()` at load time. This both emits the binding
+  immediately AND subscribes to future `request_bindings` events so it
+  can re-emit if the bridge loads later.
+- The bridge subscribes to `register_binding` events AND emits
+  `request_bindings` on load so already-running extensions re-announce.
+- **Result**: regardless of load order, all bindings converge.
+
+### Precedence in `resolveOutboundName` (with adapters)
+
+Once adapters are implemented, the outbound name resolution gains a new
+highest-priority step:
+
+```
+  1. binding registry (new)     ← adapter-equipped, schema translation
+  2. CC_CANONICAL_NAMES          exact-case passthrough (name only)
+  3. already mcp__*              passthrough
+  4. NATIVE_ALIASES (legacy)     name-only alias
+  5. FLAT_TO_MCP                 companion aliases
+  6. PI_TO_CC_CANONICAL          core tool capitalization
+  7. default                     mcp__pi__<name>
+```
+
+### Testing strategy
+
+Each binding adapter is a pure function (`wireInput → piInput`) tested
+in isolation — no wire, no hooks, no mocks:
+
+```ts
+test("blocked_domains → negative domainFilter entries", () => {
+  expect(webSearchBinding.adaptInput({
+    query: "foo", blocked_domains: ["reddit.com", "x.com"]
+  })).toEqual({
+    query: "foo", domainFilter: ["-reddit.com", "-x.com"]
+  });
+});
+
+test("queries[] preferred over query", () => {
+  expect(webSearchBinding.adaptInput({
+    query: "A", queries: ["B", "C"]
+  })).toEqual({ queries: ["B", "C"] });
+});
+```
+
+### Canonical schema drift
+
+Anthropic may update tool schemas over time. Mitigations:
+- Keep `canonicalSchema` **minimal** — only map fields we actually
+  translate. Fewer fields = less drift surface.
+- Pin the Claude Code docs version in a comment per binding.
+- Hybrid strategy is partially self-healing — unknown canonical fields
+  flow through the adapter untouched (pi handler ignores them).
+
 ## MCP naming convention
 
 The MCP namespace convention is `mcp__<server>__<tool>` where `__`
