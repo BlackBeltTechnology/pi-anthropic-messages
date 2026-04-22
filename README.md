@@ -40,6 +40,10 @@ This extension intervenes at the protocol layer:
   back to their original pi names before the agent dispatches, so existing
   tool registrations work without modification. A defensive `_ide` suffix
   strip handles cases where the Claude Code endpoint mangles the response.
+  Tools registered directly under a canonical Claude Code name (e.g.
+  `Agent`, `AskUserQuestion`) are covered end-to-end: the reverse map
+  contains an identity entry so `Agent_ide` strips back to the registered
+  `Agent` handler.
 
 The tool registry itself is never mutated — every other pi extension
 continues to register its tools under their original names and the bridge

@@ -416,3 +416,57 @@ test("renameToolCallsInPlace is a no-op when no matches", () => {
 	assert.equal((msg.content[0] as { name: string }).name, "something_weird");
 	assert.equal((msg.content[1] as { name: string }).name, "ask_user");
 });
+
+// --- canonical-passthrough reverse coverage (fix-canonical-inbound-reverse-map) ----
+//
+// When an extension registers a tool directly under a Claude Code canonical
+// name (e.g. @tintinweb/pi-subagents registers "Agent"), the outbound
+// transform passes the name through unchanged. Claude Code's endpoint still
+// mangles it to "<name>_ide" in responses, so lookupReverse must be able to
+// strip the suffix and resolve back to the canonical (now-registered) name.
+// Without an identity entry in the reverse map, pi's dispatch fails with
+// "Tool Agent_ide not found".
+
+console.log("\ncanonical-passthrough reverse coverage:");
+
+test("Agent_ide maps back to canonically-registered Agent", () => {
+	const reverse = buildReverseMap(["Agent", "bash", "read"]);
+	assert.equal(lookupReverse("Agent_ide", reverse), "Agent");
+});
+
+test("AskUserQuestion_ide maps back to canonically-registered AskUserQuestion", () => {
+	const reverse = buildReverseMap(["AskUserQuestion", "bash"]);
+	assert.equal(lookupReverse("AskUserQuestion_ide", reverse), "AskUserQuestion");
+});
+
+test("bare canonical name (no _ide) resolves when registered canonically", () => {
+	const reverse = buildReverseMap(["Agent"]);
+	assert.equal(lookupReverse("Agent", reverse), "Agent");
+});
+
+test("lowercase core registration still uses PI_TO_CC_CANONICAL (no clobber)", () => {
+	// Only "read" is registered, not "Read". The canonical-identity loop
+	// must NOT write Read → Read here, which would mask the correct
+	// PI_TO_CC_CANONICAL routing Read → read.
+	const reverse = buildReverseMap(["read"]);
+	assert.equal(lookupReverse("Read_ide", reverse), "read");
+	assert.equal(lookupReverse("Read", reverse), "read");
+});
+
+test("canonical core registration routes to itself (not the pi lowercase)", () => {
+	// Only "Read" is registered (unusual but legal). The canonical-identity
+	// loop must win and route Read → Read so dispatch finds the registered
+	// canonical handler.
+	const reverse = buildReverseMap(["Read"]);
+	assert.equal(lookupReverse("Read_ide", reverse), "Read");
+	assert.equal(lookupReverse("Read", reverse), "Read");
+});
+
+test("canonical identity is scoped to registered tools only", () => {
+	// Task is in CC_CANONICAL_NAMES but NOT in registeredToolNames.
+	// There must be no identity entry for it — otherwise dispatch would
+	// silently route to a non-existent handler instead of failing cleanly.
+	const reverse = buildReverseMap(["bash", "read"]);
+	assert.equal(lookupReverse("Task_ide", reverse), undefined);
+	assert.equal(lookupReverse("Task", reverse), undefined);
+});

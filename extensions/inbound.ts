@@ -19,6 +19,7 @@
 // ---------------------------------------------------------------------------
 
 import {
+	CC_CANONICAL_NAMES,
 	DEFAULT_MCP_PREFIX,
 	FLAT_TO_MCP,
 	NATIVE_ALIASES,
@@ -35,6 +36,10 @@ import {
  *   - NATIVE_ALIASES     (alias → registered pi name)
  *   - FLAT_TO_MCP        (mcp__server__tool → flat name)
  *   - DEFAULT_MCP_PREFIX (mcp__pi__<name> → <name>)
+ *   - CC_CANONICAL_NAMES (canonical → canonical, for tools registered
+ *                         directly under a canonical name; needed so the
+ *                         endpoint's `_ide` mangling on canonical
+ *                         passthrough names can be stripped and resolved)
  *
  * Keys are stored in both their exact form and lowercase for robust lookup.
  *
@@ -86,6 +91,24 @@ export function buildReverseMap(registeredToolNames: Iterable<string>): Map<stri
 		const prefixed = DEFAULT_MCP_PREFIX + name;
 		reverse.set(prefixed, name);
 		reverse.set(lower(prefixed), name);
+	}
+
+	// CC_CANONICAL_NAMES passthrough identity: when an extension registers a
+	// tool directly under a canonical Claude Code name (e.g.
+	// @tintinweb/pi-subagents registers "Agent"), the outbound transform
+	// passes the name through unchanged. Claude Code's endpoint still
+	// appends `_ide` in responses, so lookupReverse needs an entry to find
+	// after stripping the suffix. Scoped to registered tools only so that
+	// canonical names from unrelated (uninstalled) extensions don't produce
+	// false dispatch hits. Runs after PI_TO_CC_CANONICAL so that, if only
+	// the lowercase form is registered, the earlier canonical → lowercase
+	// mapping wins; if only the canonical form is registered, this loop
+	// writes the identity entry without conflict.
+	for (const name of registeredToolNames) {
+		if (CC_CANONICAL_NAMES.has(name)) {
+			reverse.set(name, name);
+			reverse.set(lower(name), name);
+		}
 	}
 
 	return reverse;
