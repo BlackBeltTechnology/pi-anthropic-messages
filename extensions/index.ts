@@ -109,24 +109,34 @@ writeDebugLog({ stage: "load", pid: process.pid, cwd: process.cwd() });
 /**
  * The single gate. Returns true iff the bridge should run for this session.
  *
- * BOTH conditions must hold:
- *   - api === "anthropic-messages"
- *   - model id matches /claude/i
+ * The gate opens for any `anthropic-messages` API session regardless of
+ * model id. This covers Anthropic OAuth, API-key, AND proxy providers
+ * (9Router, custom OpenAI-compatible bases, etc.) that route to Anthropic
+ * but report non-Claude model ids — those used to fall through the
+ * historical `/claude/i` check and silently break tool dispatch.
  *
- * With escape-hatch env overrides:
- *   - FORCE_CANONICAL=1 opens the gate for any anthropic-messages session
- *     regardless of model id.
- *   - DISABLE_CANONICAL=1 closes the gate for an otherwise-matching session.
+ * Escape-hatch env overrides take precedence:
+ *   - DISABLE_CANONICAL=1 closes the gate unconditionally.
+ *   - FORCE_CANONICAL=1 opens the gate even for non-anthropic-messages APIs
+ *     (useful for misreported model metadata in proxies).
+ *
+ * See change: fix-pi-flows-end-to-end (Group 4).
  */
-export function isClaudeAnthropicMessages(
+export function isAnthropicMessagesGated(
 	ctx: { model?: { api?: string; id?: string } | undefined } | undefined,
 ): boolean {
-	if (ctx?.model?.api !== "anthropic-messages") return false;
 	if (process.env.PI_ANTHROPIC_MESSAGES_DISABLE_CANONICAL === "1") return false;
 	if (process.env.PI_ANTHROPIC_MESSAGES_FORCE_CANONICAL === "1") return true;
-	const id = ctx.model?.id ?? "";
-	return /claude/i.test(id);
+	return ctx?.model?.api === "anthropic-messages";
 }
+
+/**
+ * @deprecated Use `isAnthropicMessagesGated` — the gate no longer requires
+ * the model id to contain "claude". Kept as alias for one minor release so
+ * downstream consumers (notably the dashboard's flows-anthropic-bridge
+ * plugin) don't break before they migrate.
+ */
+export const isClaudeAnthropicMessages = isAnthropicMessagesGated;
 
 export default async function piAnthropicMessages(pi: ExtensionAPI): Promise<void> {
 	writeDebugLog({ stage: "activate", pid: process.pid });
@@ -164,13 +174,13 @@ export default async function piAnthropicMessages(pi: ExtensionAPI): Promise<voi
 		// No payload here; pre-build only if the gate is open so the first
 		// inbound translation is hot. For non-gated sessions we skip the
 		// rebuild entirely.
-		if (isClaudeAnthropicMessages(ctx)) {
+		if (isAnthropicMessagesGated(ctx)) {
 			void getReverseMap();
 		}
 	});
 
 	pi.on("before_provider_request", (event, ctx) => {
-		if (!isClaudeAnthropicMessages(ctx)) return undefined;
+		if (!isAnthropicMessagesGated(ctx)) return undefined;
 		const raw = event.payload;
 		writeDebugLog({
 			stage: "outbound:before",
@@ -191,7 +201,7 @@ export default async function piAnthropicMessages(pi: ExtensionAPI): Promise<voi
 	});
 
 	pi.on("message_end", (event, ctx) => {
-		if (!isClaudeAnthropicMessages(ctx)) return;
+		if (!isAnthropicMessagesGated(ctx)) return;
 		const msg = (event as unknown as { message?: { content?: unknown } }).message;
 		if (!msg) return;
 		const changed = renameToolCallsInPlace(msg, getReverseMap());

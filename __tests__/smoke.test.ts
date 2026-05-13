@@ -21,7 +21,7 @@ import {
 	lookupReverse,
 	renameToolCallsInPlace,
 } from "../extensions/inbound.js";
-import { isClaudeAnthropicMessages } from "../extensions/index.js";
+import { isAnthropicMessagesGated, isClaudeAnthropicMessages } from "../extensions/index.js";
 import { transformPayload } from "../extensions/transform.js";
 
 function test(name: string, fn: () => void): void {
@@ -92,80 +92,80 @@ test("exported constants are populated", () => {
 	assert.equal(DEFAULT_MCP_PREFIX, "mcp__pi__");
 });
 
-// --- isClaudeAnthropicMessages gate -----------------------------------
+// --- isAnthropicMessagesGated (widened gate) -------------------------
+// See change: fix-pi-flows-end-to-end (Group 4). The gate no longer
+// requires the model id to match /claude/i — every anthropic-messages
+// API session opens the gate (covers proxy providers like 9Router that
+// route to Anthropic but report non-Claude model ids).
 
-console.log("\nisClaudeAnthropicMessages (single gate):");
+console.log("\nisAnthropicMessagesGated (widened gate):");
 
-test("opens for Claude model on anthropic-messages", () => {
+test("opens for any anthropic-messages api regardless of model id", () => {
 	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "claude-opus-4-6" } }),
+		isAnthropicMessagesGated({ model: { api: "anthropic-messages", id: "claude-opus-4-6" } }),
 		true,
 	);
 	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "9Router/cc/claude-sonnet-4" } }),
+		isAnthropicMessagesGated({ model: { api: "anthropic-messages", id: "9Router/cc/claude-sonnet-4" } }),
+		true,
+	);
+	// Non-Claude id on anthropic-messages — USED to close; now opens.
+	assert.equal(
+		isAnthropicMessagesGated({ model: { api: "anthropic-messages", id: "glm-5" } }),
 		true,
 	);
 	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "anthropic/claude-haiku-4-5" } }),
+		isAnthropicMessagesGated({ model: { api: "anthropic-messages", id: "9Router/gemini/gemini-3-pro-preview" } }),
 		true,
 	);
 	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "CLAUDE-SONNET-4" } }), // case-insensitive
+		isAnthropicMessagesGated({ model: { api: "anthropic-messages", id: "gpt-5" } }),
 		true,
 	);
-});
-
-test("closes for non-Claude anthropic-messages", () => {
+	// id is no longer required.
 	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "glm-5" } }),
-		false,
-	);
-	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "9Router/gemini/gemini-3-pro-preview" } }),
-		false,
-	);
-	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "gpt-5" } }),
-		false,
+		isAnthropicMessagesGated({ model: { api: "anthropic-messages" } }),
+		true,
 	);
 });
 
 test("closes for non-anthropic-messages api", () => {
 	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "openai-completions", id: "gpt-5" } }),
+		isAnthropicMessagesGated({ model: { api: "openai-completions", id: "gpt-5" } }),
 		false,
 	);
 	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "google-generative-ai", id: "gemini-2.5-pro" } }),
+		isAnthropicMessagesGated({ model: { api: "google-generative-ai", id: "gemini-2.5-pro" } }),
 		false,
 	);
-	// Claude name but wrong api
+	// Claude name but wrong api — still closed (the rename is anthropic-only).
 	assert.equal(
-		isClaudeAnthropicMessages({ model: { api: "openai-completions", id: "claude-via-proxy" } }),
+		isAnthropicMessagesGated({ model: { api: "openai-completions", id: "claude-via-proxy" } }),
 		false,
 	);
 });
 
 test("closes for missing ctx/model", () => {
-	assert.equal(isClaudeAnthropicMessages(undefined), false);
-	assert.equal(isClaudeAnthropicMessages({}), false);
-	assert.equal(isClaudeAnthropicMessages({ model: undefined }), false);
-	assert.equal(isClaudeAnthropicMessages({ model: { api: "anthropic-messages" } }), false); // no id
+	assert.equal(isAnthropicMessagesGated(undefined), false);
+	assert.equal(isAnthropicMessagesGated({}), false);
+	assert.equal(isAnthropicMessagesGated({ model: undefined }), false);
 });
 
-test("FORCE_CANONICAL opens the gate for any anthropic-messages session", () => {
+test("FORCE_CANONICAL opens the gate for any session", () => {
+	// New contract: FORCE_CANONICAL overrides every other check, including api.
 	const prev = process.env.PI_ANTHROPIC_MESSAGES_FORCE_CANONICAL;
 	process.env.PI_ANTHROPIC_MESSAGES_FORCE_CANONICAL = "1";
 	try {
 		assert.equal(
-			isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "glm-5" } }),
+			isAnthropicMessagesGated({ model: { api: "anthropic-messages", id: "glm-5" } }),
 			true,
 		);
-		// But still requires anthropic-messages api
+		// Force opens even for misreported model.api (useful for proxies).
 		assert.equal(
-			isClaudeAnthropicMessages({ model: { api: "openai-completions", id: "claude-via-proxy" } }),
-			false,
+			isAnthropicMessagesGated({ model: { api: "openai-completions", id: "claude-via-proxy" } }),
+			true,
 		);
+		assert.equal(isAnthropicMessagesGated(undefined), true);
 	} finally {
 		if (prev === undefined) delete process.env.PI_ANTHROPIC_MESSAGES_FORCE_CANONICAL;
 		else process.env.PI_ANTHROPIC_MESSAGES_FORCE_CANONICAL = prev;
@@ -177,13 +177,17 @@ test("DISABLE_CANONICAL closes the gate for any session", () => {
 	process.env.PI_ANTHROPIC_MESSAGES_DISABLE_CANONICAL = "1";
 	try {
 		assert.equal(
-			isClaudeAnthropicMessages({ model: { api: "anthropic-messages", id: "claude-opus-4-6" } }),
+			isAnthropicMessagesGated({ model: { api: "anthropic-messages", id: "claude-opus-4-6" } }),
 			false,
 		);
 	} finally {
 		if (prev === undefined) delete process.env.PI_ANTHROPIC_MESSAGES_DISABLE_CANONICAL;
 		else process.env.PI_ANTHROPIC_MESSAGES_DISABLE_CANONICAL = prev;
 	}
+});
+
+test("isClaudeAnthropicMessages is a deprecated alias of isAnthropicMessagesGated", () => {
+	assert.equal(isClaudeAnthropicMessages, isAnthropicMessagesGated);
 });
 
 // --- transformPayload --------------------------------------------------
