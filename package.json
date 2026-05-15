@@ -1,6 +1,6 @@
 {
   "name": "@pi/anthropic-messages",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Anthropic-messages protocol bridge for pi. Activates for any anthropic-messages API session (Anthropic OAuth/API-key + proxy providers): canonicalizes lowercase pi core tools (read/write/bash/grep → Read/Write/Bash/Grep), namespaces custom tools under mcp__pi__, rewrites the system prompt, and translates tool-call names back inbound with defensive _ide suffix stripping. True no-op for any non-anthropic-messages session. Env overrides: PI_ANTHROPIC_MESSAGES_FORCE_CANONICAL / PI_ANTHROPIC_MESSAGES_DISABLE_CANONICAL.",
   "keywords": [
     "pi",
@@ -28,7 +28,7 @@
     ]
   },
   "peerDependencies": {
-    "@mariozechner/pi-coding-agent": ">=0.57.0"
+    "@earendil-works/pi-coding-agent": ">=0.74.0"
   },
   "license": "MIT"
 }
