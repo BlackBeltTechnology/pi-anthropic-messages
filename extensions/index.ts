@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// @pi/anthropic-messages — pi extension entry point.
+// @blackbelt-technology/pi-anthropic-messages — pi extension entry point.
 //
 // Intercepts LLM requests/responses for Claude-model sessions whose protocol
 // is `anthropic-messages` (direct Anthropic OAuth/API key with a Claude

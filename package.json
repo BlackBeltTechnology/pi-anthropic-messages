@@ -1,6 +1,13 @@
 {
-  "name": "@pi/anthropic-messages",
-  "version": "0.3.1",
+  "name": "@blackbelt-technology/pi-anthropic-messages",
+  "version": "0.3.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BlackBeltTechnology/pi-anthropic-messages.git"
+  },
   "description": "Anthropic-messages protocol bridge for pi. Activates for any anthropic-messages API session (Anthropic OAuth/API-key + proxy providers): canonicalizes lowercase pi core tools (read/write/bash/grep → Read/Write/Bash/Grep), namespaces custom tools under mcp__pi__, rewrites the system prompt, and translates tool-call names back inbound with defensive _ide suffix stripping. True no-op for any non-anthropic-messages session. Env overrides: PI_ANTHROPIC_MESSAGES_FORCE_CANONICAL / PI_ANTHROPIC_MESSAGES_DISABLE_CANONICAL.",
   "keywords": [
     "pi",

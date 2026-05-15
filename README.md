@@ -1,4 +1,4 @@
-# @pi/anthropic-messages
+# @blackbelt-technology/pi-anthropic-messages
 
 Protocol-level bridge for pi when talking to **Claude-model**
 anthropic-messages endpoints — direct Anthropic (OAuth or API key),
@@ -478,5 +478,5 @@ import {
   lookupReverse,
   renameToolCallsInPlace,
   isClaudeAnthropicMessages,
-} from "@pi/anthropic-messages";
+} from "@blackbelt-technology/pi-anthropic-messages";
 ```
