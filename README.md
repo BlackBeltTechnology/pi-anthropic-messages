@@ -440,7 +440,7 @@ pi install npm:pi-agent-browser
 
 ## Relationship to other packages
 
-- **`@mariozechner/pi-ai`** — the Anthropic provider in pi-ai already
+- **`@earendil-works/pi-ai`** — the Anthropic provider in pi-ai already
   canonicalizes tool names (`toClaudeCodeName`) when it detects an
   **OAuth token**. Our bridge is idempotent with that behavior: for
   OAuth sessions pi-ai rewrites `read` → `Read` before we see the

@@ -64,7 +64,7 @@
 // ---------------------------------------------------------------------------
 
 import { appendFileSync } from "node:fs";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	CC_CANONICAL_NAMES,
 	DEFAULT_MCP_PREFIX,
