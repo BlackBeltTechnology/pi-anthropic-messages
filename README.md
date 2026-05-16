@@ -461,6 +461,10 @@ pi install npm:pi-agent-browser
   recommended extension for any Claude-model anthropic-messages provider
   setup.
 
+## Releasing
+
+Releases are cut via the [`release-cut`](.pi/skills/release-cut/SKILL.md) skill and revoked via [`release-revoke`](.pi/skills/release-revoke/SKILL.md); both walk through pre-flight, CHANGELOG curation, version bump, tag, and push, with the actual `npm publish` happening on GitHub Actions (`.github/workflows/release.yml`). The Release workflow can also be triggered by `workflow_dispatch` from the Actions UI with a version input, which performs the bump-commit-tag-push on the runner.
+
 ## Exported API
 
 For consumers that need the authoritative lists without duplication:

@@ -37,5 +37,12 @@
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": ">=0.74.0"
   },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "scripts": {
+    "lint": "tsc --noEmit"
+  },
   "license": "MIT"
 }

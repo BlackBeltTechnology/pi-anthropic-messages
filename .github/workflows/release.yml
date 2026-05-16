@@ -1,0 +1,247 @@
+name: Release
+
+# Two ways to fire this workflow:
+#
+#   1. Push a tag matching `v*`. The `prepare` job extracts the version
+#      from the tag, then `publish` runs npm publish + creates a draft
+#      GitHub Release.
+#
+#   2. Click "Run workflow" in the GitHub Actions UI (workflow_dispatch)
+#      and type the version string (e.g. "0.4.0"). The `prepare` job
+#      bumps `package.json`, promotes `## [Unreleased]` in `CHANGELOG.md`
+#      to a dated `## [vX.Y.Z]` section, commits + tags + pushes the
+#      branch, then `publish` runs against the freshly-pushed tag.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.4.0 or 0.4.0-rc.1)'
+        type: string
+        required: true
+
+# Avoid two concurrent releases racing on the same branch/tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # ── prepare: resolve version + (on dispatch) bump + tag + push ────────────
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # Used on workflow_dispatch (commit + tag + push develop).
+      contents: write
+    outputs:
+      version:       ${{ steps.resolve.outputs.version }}
+      tag:           ${{ steps.resolve.outputs.tag }}
+      is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so `git tag` can verify uniqueness against
+          # existing tags. On tag-push we land on the tag's commit; on
+          # dispatch we land on the branch the operator selected.
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve version
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#v}"
+          else
+            version="${{ github.event.inputs.version }}"
+            if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?(\+[A-Za-z0-9.-]+)?$ ]]; then
+              echo "::error::'$version' is not valid semver (X.Y.Z[-prerelease])"
+              exit 1
+            fi
+            if git ls-remote --tags origin "v$version" | grep -q "v$version$"; then
+              echo "::error::tag v$version already exists on origin"
+              exit 1
+            fi
+            tag="v$version"
+          fi
+          # Detect SemVer prerelease (anything with a `-` suffix on the
+          # X.Y.Z core, e.g. `0.4.5-rc.1`). Prereleases publish to npm
+          # under the `next` dist-tag and surface as GitHub `prerelease:
+          # true` Releases.
+          is_prerelease=$([[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+- ]] && echo true || echo false)
+          echo "Resolved: version=$version tag=$tag is_prerelease=$is_prerelease"
+          echo "version=$version"             >> "$GITHUB_OUTPUT"
+          echo "tag=$tag"                     >> "$GITHUB_OUTPUT"
+          echo "is_prerelease=$is_prerelease" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Bump package.json version
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Promote CHANGELOG [Unreleased] -> [version]
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! grep -qE '^## \[Unreleased\]' CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [Unreleased]' section to promote"
+            exit 1
+          fi
+          today=$(date -u +%Y-%m-%d)
+          # Replace "## [Unreleased]" with a fresh Unreleased section + dated section.
+          python3 - <<'PY'
+          import os, re, sys, pathlib
+          version = os.environ["VERSION"]
+          today   = os.popen("date -u +%Y-%m-%d").read().strip()
+          path    = pathlib.Path("CHANGELOG.md")
+          text    = path.read_text()
+          marker  = "## [Unreleased]"
+          if marker not in text:
+              sys.exit("no [Unreleased] section")
+          fresh = (
+              "## [Unreleased]\n"
+              "\n"
+              "### Added\n"
+              "\n"
+              "### Changed\n"
+              "\n"
+              "### Fixed\n"
+              "\n"
+              f"## [{version}] - {today}"
+          )
+          new = text.replace(marker, fresh, 1)
+          path.write_text(new)
+          print(f"Promoted [Unreleased] -> [{version}] - {today}")
+          PY
+
+      - name: Commit + tag + push
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+          TAG:     ${{ steps.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md package.json
+          git commit -m "chore(release): ${TAG}"
+          git tag -a "${TAG}" -m "${TAG}"
+          # Push branch first, tag second. If branch push fails (e.g.
+          # branch protection), we haven't yet published the tag and the
+          # job can be re-run safely.
+          git push origin HEAD:develop
+          git push origin "${TAG}"
+
+  # ── publish: npm publish + draft GitHub Release ──────────────────────────
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write  # for `gh release create`
+    env:
+      VERSION:       ${{ needs.prepare.outputs.version }}
+      TAG:           ${{ needs.prepare.outputs.tag }}
+      IS_PRERELEASE: ${{ needs.prepare.outputs.is_prerelease }}
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          # `prepare` on dispatch pushed the tag; on tag-push it already
+          # exists. Either way, fetch it explicitly.
+          ref: ${{ needs.prepare.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Set up Node.js + npm auth
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund --no-save
+
+      - name: Verify package.json version matches tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg_version=$(node -p "require('./package.json').version")
+          if [[ "$pkg_version" != "$VERSION" ]]; then
+            echo "::error::package.json version ($pkg_version) does not match tag ($VERSION)"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            echo "Publishing prerelease $VERSION under dist-tag 'next'"
+            npm publish --access public --tag next
+          else
+            echo "Publishing stable $VERSION under dist-tag 'latest'"
+            npm publish --access public
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > release-notes.md
+          import os, re, sys, pathlib
+          version = os.environ["VERSION"]
+          text = pathlib.Path("CHANGELOG.md").read_text()
+          # Match "## [<version>]" through to the next "## [" (exclusive).
+          pattern = re.compile(
+              rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+              re.MULTILINE | re.DOTALL,
+          )
+          m = pattern.search(text)
+          if not m:
+              sys.stderr.write(f"::error::no '## [{version}]' section in CHANGELOG.md\n")
+              sys.exit(1)
+          body = m.group(1).strip()
+          if not body:
+              sys.stderr.write(f"::error::'## [{version}]' section in CHANGELOG.md is empty\n")
+              sys.exit(1)
+          sys.stdout.write(body + "\n")
+          PY
+          echo "--- release notes ---"
+          cat release-notes.md
+          echo "---------------------"
+
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--title "$TAG" --notes-file release-notes.md --draft)
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$TAG" "${args[@]}"
+          echo "Draft release created. Human: review and click Publish."
