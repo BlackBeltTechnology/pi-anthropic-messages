@@ -221,11 +221,11 @@ jobs:
           )
           m = pattern.search(text)
           if not m:
-              sys.stderr.write(f"::error::no '## [{version}]' section in CHANGELOG.md\n")
+              print(f"::error::no '## [{version}]' section in CHANGELOG.md", file=sys.stderr)
               sys.exit(1)
           body = m.group(1).strip()
           if not body:
-              sys.stderr.write(f"::error::'## [{version}]' section in CHANGELOG.md is empty\n")
+              print(f"::error::'## [{version}]' section in CHANGELOG.md is empty", file=sys.stderr)
               sys.exit(1)
           sys.stdout.write(body + "\n")
           PY
