@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.3.3] - 2026-06-18
+
+### Changed
+- **Renamed npm package** from `@pi/anthropic-messages` to `@blackbelt-technology/pi-anthropic-messages`. Consumers must update their install spec and any direct `import("@pi/anthropic-messages")` to the new scope; the old name receives no further releases.
+
+### Added
+- CI workflow (type-check on push / PR) and tag-triggered Release workflow (`npm publish` + draft GitHub Release), plus `release-cut` / `release-revoke` skills.
+
 ## [0.3.1] - 2026-05-15
 
 ### Changed
