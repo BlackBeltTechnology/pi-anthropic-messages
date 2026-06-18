@@ -8,6 +8,14 @@
 
 ### Fixed
 
+## [0.3.4] - 2026-06-18
+
+### Changed
+- **Ship compiled JavaScript.** `main`/`exports`/`pi.extensions` now point to `dist/index.js` (built via `tsc -p tsconfig.build.json`, emitted on `prepack`). The package previously published raw TypeScript (`extensions/*.ts`), which a plain `import()` cannot load from `node_modules` (Node `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). This broke programmatic consumers — notably the pi-dashboard `flows-anthropic-bridge` plugin, which `await import()`s this package to forward the bridge into spawned pi-flows agent subprocesses; the failed import left the architect un-bridged ("out of extra usage"). Built JS is importable by any loader (native or jiti).
+
+### Added
+- `CHANGELOG.md` to the published tarball (`files`), so the dashboard "What's New" local fallback can read it.
+
 ## [0.3.3] - 2026-06-18
 
 ### Changed

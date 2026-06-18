@@ -1,6 +1,6 @@
 {
   "name": "@blackbelt-technology/pi-anthropic-messages",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "publishConfig": {
     "access": "public"
   },
@@ -21,17 +21,23 @@
     "proxy"
   ],
   "type": "module",
-  "main": "./extensions/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./extensions/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "files": [
-    "extensions/",
-    "README.md"
+    "dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [
-      "./extensions/index.ts"
+      "./dist/index.js"
     ]
   },
   "peerDependencies": {
@@ -42,7 +48,9 @@
     "typescript": "^5.7.0"
   },
   "scripts": {
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build"
   },
   "license": "MIT"
 }

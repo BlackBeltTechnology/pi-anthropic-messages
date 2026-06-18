@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "outDir": "./dist",
+    "rootDir": "./extensions"
+  },
+  "include": ["extensions/**/*.ts"],
+  "exclude": ["node_modules", "openspec", ".pi", "dist", "__tests__"]
+}
