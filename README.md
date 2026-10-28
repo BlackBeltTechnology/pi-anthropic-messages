@@ -1,5 +1,23 @@
 # @blackbelt-technology/pi-anthropic-messages
 
+> **RETIRED (2026-10-28). Uninstall this package.**
+>
+> ```bash
+> pi remove npm:@blackbelt-technology/pi-anthropic-messages
+> rm -f /tmp/pi-am.log   # versions ≤ 0.3.4 wrote every prompt here
+> ```
+>
+> A live test showed tool renaming has no effect on Claude subscription billing.
+> Only two lines of pi's built-in `docs` prompt section matter ("pi itself",
+> "pi packages"). pi-agent-dashboard now handles this with its **Claude
+> subscription compat** switch (off by default, on the `anthropic` provider row),
+> applied to the main session and flow agents
+> ([pi-agent-dashboard `f59e34aa3`](https://github.com/BlackBeltTechnology/pi-agent-dashboard/commit/f59e34aa3)).
+> The tool renaming in this package also causes a 400 when tools are removed mid-chat.
+> Versions ≤ 0.3.4 logged every request payload to a world-readable `/tmp/pi-am.log`;
+> 0.3.5 removes that logging and is the final release.
+> Findings: [`docs/reports/2026-10-28-bridge-necessity-report.md`](docs/reports/2026-10-28-bridge-necessity-report.md).
+
 Protocol-level bridge for pi when talking to **Claude-model**
 anthropic-messages endpoints — direct Anthropic (OAuth or API key),
 9Router `cc/claude-*`, pi-model-proxy with a Claude backend, or any other
@@ -393,7 +411,6 @@ values:
 
 | Variable | Purpose |
 |---|---|
-| `PI_ANTHROPIC_MESSAGES_DEBUG_LOG=/tmp/pi-am.log` | Dump every outbound before/after payload and inbound rename to the given path. Logger failures never break requests. |
 | `PI_ANTHROPIC_MESSAGES_FORCE_CANONICAL=1` | Force the gate open on any anthropic-messages session regardless of model id. |
 | `PI_ANTHROPIC_MESSAGES_DISABLE_CANONICAL=1` | Force the gate closed even for Claude-matching sessions. |
 

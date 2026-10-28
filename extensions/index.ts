@@ -55,15 +55,10 @@
 // picks up `read` via PI_TO_CC_CANONICAL and rewrites it. No duplication,
 // no conflict.
 //
-// Debug logging
-// -------------
-// Set PI_ANTHROPIC_MESSAGES_DEBUG_LOG=/path/to/file to dump each
-// before/after payload and inbound rename for inspection. Errors in the
-// logger never break requests. Non-gated sessions emit no outbound/inbound
-// entries; only the once-per-process load marker appears.
+// No logging: the package never writes payloads anywhere (0.3.5 removed
+// the always-on debug dump to /tmp).
 // ---------------------------------------------------------------------------
 
-import { appendFileSync } from "node:fs";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	CC_CANONICAL_NAMES,
@@ -79,32 +74,6 @@ import {
 	renameToolCallsInPlace,
 } from "./inbound.js";
 import { transformPayload } from "./transform.js";
-
-// TEMP DIAGNOSIS: until the package has been confirmed working end-to-end,
-// always write to /tmp/pi-am.log so we can tell from the filesystem whether
-// the extension loaded and whether its hooks fired. Remove this fallback
-// once the package is trusted; diagnostic-only logging should go through
-// PI_ANTHROPIC_MESSAGES_DEBUG_LOG.
-const debugLogPath =
-	process.env.PI_ANTHROPIC_MESSAGES_DEBUG_LOG ?? "/tmp/pi-am.log";
-
-function writeDebugLog(entry: unknown): void {
-	if (!debugLogPath) return;
-	try {
-		appendFileSync(
-			debugLogPath,
-			`${new Date().toISOString()}\n${JSON.stringify(entry, null, 2)}\n---\n`,
-			"utf-8",
-		);
-	} catch {
-		/* never throw from logging */
-	}
-}
-
-// Load marker — written exactly once per pi process import. Seeing an
-// ISO timestamp followed by "stage: load" in /tmp/pi-am.log is proof that
-// the extension was resolved, imported, and evaluated by pi's loader.
-writeDebugLog({ stage: "load", pid: process.pid, cwd: process.cwd() });
 
 /**
  * The single gate. Returns true iff the bridge should run for this session.
@@ -139,8 +108,6 @@ export function isAnthropicMessagesGated(
 export const isClaudeAnthropicMessages = isAnthropicMessagesGated;
 
 export default async function piAnthropicMessages(pi: ExtensionAPI): Promise<void> {
-	writeDebugLog({ stage: "activate", pid: process.pid });
-
 	// Cached reverse map. Rebuilt lazily from pi.getAllTools() when needed.
 	// Only exists for gated sessions; cleared on session boundaries and
 	// whenever an outbound rewrite adds a new mapping.
@@ -181,19 +148,7 @@ export default async function piAnthropicMessages(pi: ExtensionAPI): Promise<voi
 
 	pi.on("before_provider_request", (event, ctx) => {
 		if (!isAnthropicMessagesGated(ctx)) return undefined;
-		const raw = event.payload;
-		writeDebugLog({
-			stage: "outbound:before",
-			model: ctx.model?.id,
-			payload: raw,
-		});
-		const { payload, nameMap } = transformPayload(raw, resolveOutboundName);
-		writeDebugLog({
-			stage: "outbound:after",
-			model: ctx.model?.id,
-			renames: Array.from(nameMap.entries()),
-			payload,
-		});
+		const { payload, nameMap } = transformPayload(event.payload, resolveOutboundName);
 		// If the outbound rename added mappings, invalidate the reverse cache
 		// so the next getReverseMap() picks them up.
 		if (nameMap.size > 0) invalidateReverseMap();
@@ -204,14 +159,7 @@ export default async function piAnthropicMessages(pi: ExtensionAPI): Promise<voi
 		if (!isAnthropicMessagesGated(ctx)) return;
 		const msg = (event as unknown as { message?: { content?: unknown } }).message;
 		if (!msg) return;
-		const changed = renameToolCallsInPlace(msg, getReverseMap());
-		if (changed) {
-			writeDebugLog({
-				stage: "inbound:renamed",
-				model: ctx.model?.id,
-				message: msg,
-			});
-		}
+		renameToolCallsInPlace(msg, getReverseMap());
 	});
 }
 

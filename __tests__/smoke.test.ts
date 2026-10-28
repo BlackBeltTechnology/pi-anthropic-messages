@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { strict as assert } from "node:assert";
+import { readFileSync, readdirSync } from "node:fs";
 import {
 	CC_CANONICAL_NAMES,
 	DEFAULT_MCP_PREFIX,
@@ -473,4 +474,18 @@ test("canonical identity is scoped to registered tools only", () => {
 	const reverse = buildReverseMap(["bash", "read"]);
 	assert.equal(lookupReverse("Task_ide", reverse), undefined);
 	assert.equal(lookupReverse("Task", reverse), undefined);
+});
+
+// --- no logging ----------------------------------------------------------
+
+console.log("\nno debug logging (retired /tmp/pi-am.log leak):");
+
+test("extension source never imports node:fs nor names a log path", () => {
+	const dir = new URL("../extensions/", import.meta.url);
+	for (const f of readdirSync(dir).filter((n) => n.endsWith(".ts"))) {
+		const src = readFileSync(new URL(f, dir), "utf-8");
+		assert.ok(!/from\s+["']node:fs["']|require\(["'](node:)?fs["']\)/.test(src), `${f} imports fs`);
+		assert.ok(!src.includes("pi-am.log"), `${f} mentions pi-am.log`);
+		assert.ok(!src.includes("PI_ANTHROPIC_MESSAGES_DEBUG_LOG"), `${f} reads DEBUG_LOG env`);
+	}
 });
