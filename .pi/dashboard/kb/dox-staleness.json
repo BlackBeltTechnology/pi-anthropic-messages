@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "files": {
+    "extensions/core-tools.ts": {
+      "sha256": "977e36cde8ccb94f64f06a46241e1ac51aa8b3613d761422ab339121b96e2e4a",
+      "size": 6895,
+      "mtimeMs": 1793178396574.9468
+    },
+    "extensions/inbound.ts": {
+      "sha256": "475ba0f819829eb5967a6320cbaddc9ac3cade3202815aa9197fc9a8964abad9",
+      "size": 6630,
+      "mtimeMs": 1793178396575.0833
+    },
+    "extensions/index.ts": {
+      "sha256": "926a304ec94a4cfc9a0845d72237c7e35f664064f52e72919704f29ba65f7b3c",
+      "size": 8822,
+      "mtimeMs": 1793178837440.5977
+    },
+    "extensions/transform.ts": {
+      "sha256": "87d12496a11a93ad244c0f163b7d89d469d4716cdcab4828ad792253115d23f7",
+      "size": 5338,
+      "mtimeMs": 1793178396575.3562
+    },
+    "docs/reports/2026-10-28-bridge-necessity-report.md": {
+      "sha256": "fc0b9d6de6b7080dd8844b15cd4aa52d91f16098ef116d614af9d17d8e03bcb5",
+      "size": 16817,
+      "mtimeMs": 1793179866722.807
+    }
+  }
+}

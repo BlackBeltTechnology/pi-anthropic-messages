@@ -1,0 +1,12 @@
+{
+  "flows": {
+    "editFlow": true
+  },
+  "worktreeInit": {
+    "gate": "test ! -d node_modules",
+    "run": {
+      "type": "script",
+      "command": "npm install --no-audit --no-fund"
+    }
+  }
+}
