@@ -8,6 +8,16 @@
 
 ### Fixed
 
+## [0.3.5] - 2026-10-28
+
+Final release. The package is **retired**; uninstall it (`pi remove npm:@blackbelt-technology/pi-anthropic-messages`). pi-agent-dashboard's **Claude subscription compat** switch replaces it.
+
+### Fixed
+- **Security: removed all debug logging.** Versions 0.3.2–0.3.4 wrote every request payload (full prompts, tool output, file contents) to `/tmp/pi-am.log` by default. The file was world-readable (`0644`), written synchronously, grew by many GB per week, and its fixed path in `/tmp` could be redirected with a symlink. The package now writes nothing to disk, and `PI_ANTHROPIC_MESSAGES_DEBUG_LOG` is gone. Delete any existing `/tmp/pi-am.log` by hand.
+
+### Changed
+- **Retired.** A live billing test (2026-10-28, pi 1.4.0, Sonnet 5.5 / Opus 5.5) showed tool names don't affect subscription billing; only the "pi itself" / "pi packages" lines of pi's `docs` prompt section do. pi-agent-dashboard now rewrites those lines itself. The repository is archived. See `docs/reports/2026-10-28-bridge-necessity-report.md`.
+
 ## [0.3.4] - 2026-06-18
 
 ### Changed
